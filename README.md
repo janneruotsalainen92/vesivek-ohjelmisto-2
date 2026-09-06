@@ -37,7 +37,7 @@ pip install -e ".[dev]"
 
 ## Demo (README-polku)
 
-Esimerkkikuvat: `examples/kuvat/` (työmaakuva) ja `examples/kuvat_mittatikku/` (synteettinen 1 m tikku).
+Esimerkkikuvat: `examples/kuvat/` (työmaakuva + synteettinen 1 m tikku). Sama tikku on myös `examples/kuvat_mittatikku/`.
 
 ### 1) Live-WFS + kuvakansio (suositeltu)
 

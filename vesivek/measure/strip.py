@@ -134,7 +134,7 @@ def measure_strip(
 
     if photos_for_trees:
         n, note = count_trees(photos_for_trees)
-        if n is not None:
+        if n is not None and n > 0:
             records.append(
                 SurfaceRecord(
                     tyyppi="puu",

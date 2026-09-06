@@ -84,9 +84,9 @@ def _cmd_julkisivut(args: argparse.Namespace) -> int:
             continue
         print(f"  {f.key:12}  {f.length_m:8.2f} m   {f.label_fi}   ({len(f.edges)} janaa)")
     print()
-    print("Yksittäiset särmät:")
+    print("Yksittäiset särmät (≥ 1 m; lyhyemmät porrastukset sisältyvät sivun summaan):")
     for f in facades:
-        if f.key.startswith("reuna-"):
+        if f.key.startswith("reuna-") and f.length_m >= 1.0:
             print(f"  {f.key:12}  {f.length_m:8.2f} m   {f.compass}")
     return 0
 
