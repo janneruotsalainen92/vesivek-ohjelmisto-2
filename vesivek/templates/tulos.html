@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="fi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mittaus — Vesivek</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="badge">Tulokset</div>
+      <h1>{{ result.facade.label_fi }}</h1>
+      <p>{{ result.site.matched_address or result.site.address_query }} · {{ result.facade.length_m|round(2) }} m WFS-särmä</p>
+    </header>
+
+    <div class="notice {{ 'ok' if result.site.verified else 'warn' }}">
+      {{ result.site.crs }} ·
+      {% if result.site.verified %}WFS-lukittu runko{% else %}Esimerkkigeometria — metrit eivät välttämättä kuulu tähän osoitteeseen{% endif %}
+      · {{ result.site.source_name }}
+    </div>
+
+    {% for w in result.warnings %}
+      <div class="notice warn">{{ w }}</div>
+    {% endfor %}
+
+    <div class="card">
+      <img class="preview" src="{{ url_for('download', token=token, name='julkisivukaista.png') }}" alt="Mitattu runko ja julkisivukaista">
+      <div class="actions">
+        <a class="btn" href="{{ url_for('download', token=token, name='julkisivukaista.png') }}">Lataa PNG</a>
+        <a class="btn" href="{{ url_for('download', token=token, name='mittaus.xlsx') }}">Lataa Excel</a>
+        <a class="btn secondary" href="{{ url_for('download', token=token, name='julkisivukaista.geojson') }}">GeoJSON</a>
+        <a class="btn secondary" href="{{ url_for('index') }}">Uusi mittaus</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0">Pinnat</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Kohde</th>
+            <th>Määrä</th>
+            <th>Luotettavuus</th>
+            <th>Huomio</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for rec in result.surfaces %}
+          <tr>
+            <td>{{ rec.label_fi }}</td>
+            <td>
+              {% if rec.value is none %}EI LASKETTU
+              {% else %}{{ '%.2f'|format(rec.value) }} {{ rec.unit }}{% endif %}
+            </td>
+            <td>{{ rec.luotettavuus }}</td>
+            <td>{{ rec.huomio }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <p class="scope">Valokuvia käsitelty: {{ result.photos|length }}. Tiedostot: <code>{{ result.output_dir }}</code></p>
+  </div>
+</body>
+</html>

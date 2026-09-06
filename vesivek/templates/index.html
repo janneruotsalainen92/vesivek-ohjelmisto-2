@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="fi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vesivek Ohjelma v1</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="badge">MVP v1 · yksi julkisivu</div>
+      <h1>Vesivek Ohjelma</h1>
+      <p>Osoite + työmaakuvat → WFS-lukittu runko (EPSG:3067) ja yhden julkisivukaistan pinta-alat. Ei putkia, ei kuivatussuunnitelmaa.</p>
+    </header>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form class="card" method="post" action="{{ url_for('julkisivut') }}">
+      <label for="osoite">Katuosoite</label>
+      <input id="osoite" name="osoite" type="text" required placeholder="esim. Pohjoinen Hesperiankatu 3, Helsinki" value="{{ request.args.get('osoite', '') }}">
+      <p class="hint">Suomalainen katuosoite. Rakennuksen seinät lukitaan avoimeen WFS-geometriaan — metrejä ei keksitä.</p>
+
+      <label for="wfs">WFS-lähde</label>
+      <select id="wfs" name="wfs">
+        <option value="auto">Automaatti (Helsinki → HSY → esimerkki)</option>
+        <option value="live">Vain live-WFS (epäonnistuu jos ei osumaa)</option>
+        <option value="stub">Esimerkkigeometria (offline)</option>
+      </select>
+
+      <p style="margin-top:16px"><button type="submit">Hae julkisivut WFS:stä</button></p>
+    </form>
+
+    <div class="card scope">
+      <p><strong>v1 tekee:</strong> hakee rakennuksen/tontin avoimesta WFS:stä, lukitsee yhden julkisivun pituuden, luokittelee kuvista pintoja (asfaltti, laatta, sepeli, pensas…) ja kirjoittaa PNG + Excel.</p>
+      <p><strong>v1 ei tee:</strong> salaojaa, sadevesiputkia, täyttä kuivatussuunnitelmaa, eikä keksi leveyttä/m² ilman mittatikkua tai antamaasi kaistan leveyttä.</p>
+    </div>
+  </div>
+</body>
+</html>

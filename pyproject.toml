@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vesivek-ohjelma"
+version = "0.1.0"
+description = "Vesivek Ohjelma MVP v1 — WFS-lukittu julkisivukaista, pinta-alat PNG + Excel"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Vesivek Ohjelma" }]
+dependencies = [
+  "shapely>=2.0",
+  "pyproj>=3.6",
+  "requests>=2.31",
+  "Pillow>=10.0",
+  "numpy>=1.26",
+  "openpyxl>=3.1",
+  "flask>=3.0",
+  "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+vesivek = "vesivek.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["vesivek*"]
+
+[tool.setuptools.package-data]
+vesivek = ["templates/*", "static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
