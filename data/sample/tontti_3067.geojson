@@ -1,0 +1,54 @@
+{
+  "type": "FeatureCollection",
+  "name": "Kiinteisto_alue.20262",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:EPSG::3067"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "id": "Kiinteisto_alue.20262",
+      "properties": {
+        "id": 20262,
+        "kiinteistotunnus": "09101404620017",
+        "kiinteisto": "91-14-462-17",
+        "kunta": "091",
+        "datanomistaja": "Helsinki/Kami",
+        "_lahde": "Helsingin avoin WFS, EPSG:3067",
+        "_huomio": "Esimerkkiaineisto. Metrit ovat tämän WFS-kohteen virallista geometriaa."
+      },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                385057.6689045,
+                6673038.05807663
+              ],
+              [
+                385069.66367175,
+                6673016.93640021
+              ],
+              [
+                385094.55810041,
+                6673021.70839928
+              ],
+              [
+                385088.44918965,
+                6673053.84881898
+              ],
+              [
+                385057.6689045,
+                6673038.05807663
+              ]
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "kaistan_leveys_m": 1.20,
+  "kaistan_leveys_lahde": "kayttaja",
+  "osuudet": [
+    { "tyyppi": "asfaltti", "alku": 0.00, "loppu": 0.55 },
+    { "tyyppi": "laatta", "alku": 0.55, "loppu": 0.75 },
+    { "tyyppi": "sepeli", "alku": 0.75, "loppu": 0.90 },
+    { "tyyppi": "pensas", "alku": 0.90, "loppu": 1.00 }
+  ]
+}
