@@ -42,15 +42,16 @@ def build_mittaviivat(
             end = _far(inter, (px, py))
             if end is None:
                 continue
-            length = float(LineString([(px, py), end]).length)
+            ex, ey = float(end[0]), float(end[1])
+            length = float(LineString([(px, py), (ex, ey)]).length)
             if length < 0.05:
                 continue
             ticks.append(
                 QcTick(
                     id=f"MV-{n:03d}",
                     kind="seina-raja" if i % 5 == 0 else "tikku-1m",
-                    start=(px, py),
-                    end=end,
+                    start=(float(px), float(py)),
+                    end=(ex, ey),
                     length_m=round(length, 3),
                     huomio="seinä → kaistan ulkoreuna" if i % 5 == 0 else "1 m -kokeilu seinältä rajalle",
                 )
@@ -112,4 +113,12 @@ def _far(inter, origin: tuple[float, float]) -> tuple[float, float] | None:
         return None
     if not coords:
         return None
-    return max(coords, key=lambda p: (p[0] - origin[0]) ** 2 + (p[1] - origin[1]) ** 2)
+    flat: list[tuple[float, float]] = []
+    for p in coords:
+        try:
+            flat.append((float(p[0]), float(p[1])))
+        except (TypeError, IndexError, ValueError):
+            continue
+    if not flat:
+        return None
+    return max(flat, key=lambda p: (p[0] - origin[0]) ** 2 + (p[1] - origin[1]) ** 2)

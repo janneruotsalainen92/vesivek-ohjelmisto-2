@@ -45,6 +45,9 @@ def test_stub_pipeline_writes_png_and_excel(tmp_path):
     assert "WFS-pituus" in wb.sheetnames
     assert "Lineaariset" in wb.sheetnames
     assert "Pinta-alat" in wb.sheetnames
+    assert result.qc_ticks
+    assert all(t.id.startswith("MV-") for t in result.qc_ticks)
+    assert len({t.id for t in result.qc_ticks}) == len(result.qc_ticks)
 
 
 def test_no_width_no_plot_excel_ei_laskettu(tmp_path, rectangle_site):
