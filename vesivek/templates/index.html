@@ -9,9 +9,9 @@
 <body>
   <div class="wrap">
     <header>
-      <div class="badge">MVP v1 · yksi julkisivu</div>
+      <div class="badge">bot-kokeilu · kaista seinä→reuna</div>
       <h1>Vesivek Ohjelma</h1>
-      <p>Osoite + työmaakuvat → WFS-lukittu runko (EPSG:3067) ja yhden julkisivukaistan pinta-alat. Ei putkia, ei kuivatussuunnitelmaa.</p>
+      <p>Osoite + työmaakuvat → WFS-lukittu runko (EPSG:3067), tontti/orto ja yhden julkisivukaistan pinta-alat. Ei virallinen tuote. Ei putkia, ei kuivatussuunnitelmaa.</p>
     </header>
 
     {% with messages = get_flashed_messages() %}
@@ -27,7 +27,7 @@
 
       <label for="wfs">WFS-lähde</label>
       <select id="wfs" name="wfs">
-        <option value="auto">Automaatti (Helsinki → HSY → esimerkki)</option>
+        <option value="auto">Automaatti (Helsinki → HSY → Vantaa → esimerkki)</option>
         <option value="live">Vain live-WFS (epäonnistuu jos ei osumaa)</option>
         <option value="stub">Esimerkkigeometria (offline)</option>
       </select>
@@ -36,8 +36,8 @@
     </form>
 
     <div class="card scope">
-      <p><strong>v1 tekee:</strong> hakee rakennuksen/tontin avoimesta WFS:stä, lukitsee yhden julkisivun pituuden, luokittelee kuvista pintoja (asfaltti, laatta, sepeli, pensas…) ja kirjoittaa PNG + Excel.</p>
-      <p><strong>v1 ei tee:</strong> salaojaa, sadevesiputkia, täyttä kuivatussuunnitelmaa, eikä keksi leveyttä/m² ilman mittatikkua tai antamaasi kaistan leveyttä.</p>
+      <p><strong>Teko:</strong> hakee rakennuksen ja tontin avoimesta WFS:stä, lukitsee yhden julkisivun pituuden, digitoi kaistan seinästä tontin/puskurin reunaan, luokittelee FM-007-pinnat (seinänvierus, asfaltti, sepeli, laatta, rajapuska, päätylaatta) ja kirjoittaa PNG + Excel. m² vain kun leveys tunnetaan.</p>
+      <p><strong>Ei tee:</strong> salaojaa, sadevesiputkia, täyttä kuivatussuunnitelmaa, eikä keksi leveyttä/m² ilman mittatikkua, <code>--kaistan-leveys</code> tai tontin reunaa. Peitetyt alat merkitään EI VARMENNETTU.</p>
     </div>
   </div>
 </body>

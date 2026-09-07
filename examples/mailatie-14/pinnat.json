@@ -1,0 +1,14 @@
+{
+  "jaottelu": "seinasta",
+  "peite": "autot",
+  "huomio": "Leveysosuudet seinästä ulos valokuvista A–F (Mailatie 14 pohjoinen). EI kopio FM-007-lukoista. Autot peittävät ajoa — m² merkitään EI VARMENNETTU.",
+  "osuudet": [
+    { "tyyppi": "seinänvierus", "osuus": 0.15 },
+    { "tyyppi": "asfaltti", "osuus": 0.62 },
+    { "tyyppi": "sepeli", "osuus": 0.16 },
+    { "tyyppi": "rajapuska", "osuus": 0.07 }
+  ],
+  "paatylaatta": {
+    "huomio": "Punainen laatta näkyy päätykuvissa E / E-paaty. Palaa ei mitattu tikulla — ohjelma ei keksi m²."
+  }
+}

@@ -25,6 +25,9 @@ class HelsinkiWfsFetcher:
     name = "Helsingin avoin WFS (kartta.hel.fi)"
 
     def fetch_site(self, easting: float, northing: float, address: str) -> SiteFrame | None:
+        addr_l = (address or "").lower()
+        if "vantaa" in addr_l and "helsinki" not in addr_l:
+            return None
         if not _in_helsinki_window(easting, northing):
             return None
 
