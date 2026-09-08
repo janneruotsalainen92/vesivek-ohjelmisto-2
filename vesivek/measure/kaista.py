@@ -8,6 +8,7 @@ from shapely.ops import unary_union
 from shapely.validation import make_valid
 
 from vesivek.models import Facade, SiteFrame, StripInfo
+from vesivek.valokuva import dual_source_verdict
 
 
 SEARCH_M = 40.0
@@ -71,68 +72,92 @@ def build_strip(
     width_source: str,
 ) -> StripInfo:
     """
-    Digitize the kaista outward from the WFS facade:
+    Digitize the kaista outward from the WFS facade (EPSG:3067 snap):
 
     - plot/tontti edge when a plot polygon is available (geometric, not invented)
-    - otherwise a buffer of ``width_m`` (--kaistan-leveys or mittatikku)
+    - buffer of ``width_m`` (--kaistan-leveys or mittatikku)
+    - dual ±10 %: if both exist, report A/B and never average
     - otherwise no area geometry (EI LASKETTU)
     """
     building = building_shape(site)
     plot = plot_shape(site)
 
-    if plot is not None and (width_m is None or width_source in {"puuttuu", "tontti"}):
+    plot_geom = None
+    plot_area = None
+    if plot is not None:
         raw = offset_polygon(facade, SEARCH_M)
-        if raw is None:
-            return _empty("Tontti on, mutta julkisivun offsetia ei saatu.")
-        yard = plot.difference(building)
-        strip = raw.intersection(yard)
-        strip = _clean(strip)
-        if strip is None:
-            return _empty("Tontin ja julkisivun leikkaus on tyhjä.")
-        mean_w, max_w = _widths(facade, strip)
-        area = float(strip.area)
-        return StripInfo(
-            geometry=mapping(strip),
-            width_m=mean_w,
-            width_source="tontti",
-            mean_width_m=mean_w,
-            max_width_m=max_w,
-            clip="tontti",
-            area_m2=round(area, 3),
-            huomio=(
-                f"Kaista = WFS-julkisivu → tontin reuna (EPSG:3067). "
-                f"Keskimääräinen leveys {mean_w:.2f} m, pinta-ala {area:.2f} m² geometriasta. "
-                "Metrejä ei keksitty kuvista."
-            ),
-        )
+        if raw is not None:
+            yard = plot.difference(building)
+            plot_geom = _clean(raw.intersection(yard))
+            if plot_geom is not None:
+                plot_area = float(plot_geom.area)
 
+    buf_geom = None
+    buf_area = None
     if width_m and width_m > 0:
         raw = offset_polygon(facade, width_m)
-        if raw is None:
-            return _empty("Puskurikaistaa ei saatu.")
-        strip = raw.difference(building)
-        if plot is not None:
-            strip = strip.intersection(plot)
-            clip = "puskuri+tontti"
-        else:
-            clip = "puskuri"
-        strip = _clean(strip)
-        if strip is None:
-            return _empty("Puskurikaista on tyhjä.")
+        if raw is not None:
+            buf = raw.difference(building)
+            if plot is not None:
+                buf = buf.intersection(plot)
+            buf_geom = _clean(buf)
+            if buf_geom is not None:
+                buf_area = float(buf_geom.area)
+
+    dual = dual_source_verdict(plot_area, buf_area)
+
+    # Draw the WFS-snapped plot strip when present; else the measured buffer.
+    # Dual disagree → still draw plot (A) and keep B as a number only.
+    if plot_geom is not None:
+        strip = plot_geom
+        clip = "tontti"
+        src = "tontti"
+        drawn_width = None
+        note_core = (
+            f"Kaista = WFS-julkisivu → tontin reuna (EPSG:3067). "
+            f"Pinta-ala A={plot_area:.2f} m² geometriasta."
+        )
+        if width_m:
+            clip = "tontti+puskuri"
+            src = width_source if width_source not in {"puuttuu", "tontti"} else "tontti"
+            drawn_width = float(width_m)
+            note_core += f" Puskuri B={buf_area:.2f} m² ({width_source})." if buf_area else ""
         mean_w, max_w = _widths(facade, strip)
-        area = float(strip.area)
+        if drawn_width is None:
+            drawn_width = mean_w
         return StripInfo(
             geometry=mapping(strip),
+            width_m=drawn_width,
+            width_source=src,
+            mean_width_m=mean_w,
+            max_width_m=max_w,
+            clip=clip,
+            area_m2=round(plot_area, 3) if dual.status != "disagree" else round(plot_area, 3),
+            huomio=note_core + " " + dual.note,
+            area_m2_plot=round(plot_area, 3) if plot_area else None,
+            area_m2_buffer=round(buf_area, 3) if buf_area else None,
+            dual_status=dual.status,
+            dual_note=dual.note,
+        )
+
+    if buf_geom is not None and width_m:
+        mean_w, max_w = _widths(facade, buf_geom)
+        return StripInfo(
+            geometry=mapping(buf_geom),
             width_m=float(width_m),
             width_source=width_source,
             mean_width_m=mean_w,
             max_width_m=max_w,
-            clip=clip,
-            area_m2=round(area, 3),
+            clip="puskuri",
+            area_m2=round(buf_area, 3) if buf_area else None,
             huomio=(
                 f"Kaista = WFS-julkisivun puskuri {width_m:.2f} m ({width_source}), "
-                f"pinta-ala {area:.2f} m². Ei arvattua leveyttä."
+                f"pinta-ala {buf_area:.2f} m². {dual.note}"
             ),
+            area_m2_plot=None,
+            area_m2_buffer=round(buf_area, 3) if buf_area else None,
+            dual_status=dual.status,
+            dual_note=dual.note,
         )
 
     return _empty(

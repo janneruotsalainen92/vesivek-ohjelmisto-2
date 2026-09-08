@@ -72,8 +72,16 @@ def write_png(result: MeasurementResult, path: Path) -> Path:
     for rec in result.surfaces:
         if rec.geometry and rec.kind == "area" and rec.tyyppi in COLORS:
             hatch = None
-            if rec.luotettavuus in {"epavarma", "arvio", "esimerkki", "ei_varmennettu"} or rec.value is None:
+            ls = "-"
+            if rec.lock_tila in {"pre_lock", "ei_varmennettu", "arvio", "ei_laskettu"} or rec.luotettavuus in {
+                "epavarma",
+                "arvio",
+                "esimerkki",
+                "ei_varmennettu",
+                "pre_lock",
+            } or rec.value is None:
                 hatch = "///"
+                ls = "--"
             _draw_geom(
                 ax,
                 rec.geometry,
@@ -83,6 +91,7 @@ def write_png(result: MeasurementResult, path: Path) -> Path:
                 z=4,
                 alpha=0.62,
                 hatch=hatch,
+                ls=ls,
             )
 
     for edge in result.facade.edges:
@@ -98,7 +107,13 @@ def write_png(result: MeasurementResult, path: Path) -> Path:
 
     if result.mittaviivat:
         for tick in result.qc_ticks:
-            color = "#1565c0" if tick.kind == "seina-raja" else "#6a1b9a" if tick.kind == "pinta" else "#455a64"
+            color = (
+                "#1565c0"
+                if tick.kind == "seina-raja"
+                else "#6a1b9a"
+                if tick.kind == "tyokaista"
+                else "#455a64"
+            )
             ax.plot(
                 [tick.start[0], tick.end[0]],
                 [tick.start[1], tick.end[1]],
@@ -106,7 +121,7 @@ def write_png(result: MeasurementResult, path: Path) -> Path:
                 linewidth=0.7 if tick.kind == "tikku-1m" else 1.15,
                 zorder=7,
             )
-            if tick.kind in {"seina-raja", "pinta"}:
+            if tick.kind in {"seina-raja", "tyokaista"}:
                 mx = (tick.start[0] + tick.end[0]) / 2
                 my = (tick.start[1] + tick.end[1]) / 2
                 ax.text(mx, my, tick.id, fontsize=5.5, color=color, zorder=8)
@@ -148,7 +163,11 @@ def write_png(result: MeasurementResult, path: Path) -> Path:
                 val = "EI LASKETTU" if rec.value is None else f"{rec.value:.2f} m²"
             else:
                 val = "—" if rec.value is None else f"{rec.value:.2f} {rec.unit}"
-            extra = " EI VARMENNETTU" if rec.luotettavuus == "ei_varmennettu" else f" [{rec.luotettavuus}]"
+            extra = (
+                " EI VARMENNETTU"
+                if rec.luotettavuus == "ei_varmennettu"
+                else f" [{rec.lock_tila}]"
+            )
             legend_items.append((COLORS[rec.tyyppi], f"{rec.label_fi}: {val}{extra}"))
     for color, text in legend_items:
         handles.append(plt.Line2D([0], [0], color=color, lw=6))
@@ -180,8 +199,9 @@ def _badge_text(result: MeasurementResult) -> str:
         f"Lähde: {site.source_name}",
         f"{result.facade.label_fi}: {result.facade.length_m:.2f} m",
         width,
-        f"clip={clip} · tontti={'kyllä' if site.plot else 'ei'} · orto={'kyllä' if result.ortho_bytes else 'ei'}",
+        f"clip={clip} · tontti={'kyllä' if site.plot else 'ei'} · orto={'kyllä' if result.ortho_bytes else 'ei'} · vaihe={result.tyovaihe}",
         "Salaojaa / sadevesiputkia EI piirretä.",
+        f"Dual: {result.strip.dual_status if result.strip else '—'}",
     ]
     if result.occlusion or result.occlusion_note:
         lines.append("EI VARMENNETTU: " + (result.occlusion_note or "peite"))

@@ -42,6 +42,7 @@ def test_stub_pipeline_writes_png_and_excel(tmp_path):
     assert result.png_path.stat().st_size > 1000
     assert result.xlsx_path.stat().st_size > 1000
     wb = load_workbook(result.xlsx_path)
+    assert "Valokuva-lukot" in wb.sheetnames
     assert "WFS-pituus" in wb.sheetnames
     assert "Lineaariset" in wb.sheetnames
     assert "Pinta-alat" in wb.sheetnames

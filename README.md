@@ -111,6 +111,38 @@ Muuten Excelissä `ala_m2` = `EI LASKETTU`. Lineaarinen WFS-pituus säilyy.
 
 ---
 
+## Valokuva-lukot (perintö, ei rinnakkainen oppi)
+
+Ketjun lukot on koodattu `vesivek/valokuva.py`:stä. Strip, Excel ja PNG **perivät** ne.
+
+### Koodattu
+
+| Lukko | Toteutus |
+| --- | --- |
+| Peite / EI VARMENNETTU | Autot, ruukut, pyörät, varjo → `ei_varmennettu`. m² ei teeskennellä tarkaksi. |
+| ARVIO | Päätylaatta ja kpl-laskenta. |
+| PRE-LOCK | Luokka-m² ja yhden lähteen kaista. HSV-osuudet **eivät** ole lukittuja metrejä. |
+| Jatkuvuus | Kaistat julkisivun suuntaan; katkaisu vain nurkka / tontin reuna / selvä materiaali. |
+| Neliötapa | m² vain WFS-särmään EPSG:3067 pinottuna, kun leveys tunnetaan. |
+| Dual ±10 % | Tontti (A) vs puskuri/tikku (B). Sovittu → dual_ok. Ero >10 % → raportoi A **ja** B, **ei keskiarvoa**. |
+| Yksi lähde | Photo-only / yksi lähde → dashed / PRE-LOCK. |
+| Kuva > tyhjä kartta | Valokuvan luokka piirretään katkoviivalla, ei jätetä pois. |
+| MV-* tasot | 1: `MV-###` seinä→raja + 1 m. 2: `MV-ASF-*`, `MV-LAATTA-*`, `MV-TERASSI-*`, `MV-KATOS-*`, `MV-SEINA-*`, `MV-SEPELI-*`, `MV-RAJA-*`, `MV-PAATY-*`. Ei nurmikkoa / pensasta / peitefilliä. |
+| WFS-snap | Viivat lähtevät WFS-julkisivusärmästä. QC-kerros; `--no-mittaviivat` piilottaa. |
+| Työjärjestys 0→3 | `tyovaihe` kenttä + Excel-välilehti Valokuva-lukot. |
+| Excel a/b/c | WFS-pituus, lineaariset m, m² erillään. |
+
+### TODO (ei tässä bot-kokeilussa)
+
+- Asfaltin automaattiluokitus **ortopikseleistä** (orto on vain tausta)
+- Drone
+- Ihmisen kuittaus PRE-LOCK → lukittu
+- Epäsäännölliset FM-007-polygonit (nyt leveyskaistat)
+- Varjo vs peite -erottelu, täysi ruukku/pyörä-CV
+- Lista↔suunnitelma -editori
+
+---
+
 ## WFS
 
 Oletusketju (`--wfs auto`):
@@ -143,7 +175,7 @@ Osuudet ovat **seinästä ulos** (`jaottelu: seinasta`):
 }
 ```
 
-QC-mittaviivat: `--mittaviivat` (oletus) / `--no-mittaviivat`. Tunnisteet `MV-001`…
+QC-mittaviivat: `--mittaviivat` (oletus, QC-kerros) / `--no-mittaviivat` (piilota esityksestä). Tunnisteet `MV-###` (rakennus) ja `MV-ASF-*` / `MV-SEINA-*` … (työkaista).
 
 ---
 
@@ -157,4 +189,4 @@ pytest -q
 
 ## English summary
 
-Bot experiment (not a product). One facade **strip polygon** from the WFS wall out to the plot edge or a measured buffer. Areas (m²) only when width is known. FM-007 class labels. Occluded surfaces stay **EI VARMENNETTU**. No drainage pipes.
+Bot experiment (not a product). One facade **strip polygon** from the WFS wall out to the plot edge or a measured buffer. Areas (m²) only when width is known and pinned to EPSG:3067. Class splits stay **PRE-LOCK**; occluded surfaces **EI VARMENNETTU**. Dual sources >10% report A and B, no average. No drainage pipes.

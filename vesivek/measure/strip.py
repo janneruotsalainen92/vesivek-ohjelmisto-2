@@ -21,6 +21,11 @@ from vesivek.measure.kaista import (
     split_width_bands,
 )
 from vesivek.models import Facade, SiteFrame, StickResult, StripInfo, SurfaceRecord
+from vesivek.valokuva import (
+    area_confidence,
+    dual_source_verdict,
+    is_clutter,
+)
 
 
 def load_surface_override(path: Path | None) -> dict[str, Any] | None:
@@ -65,6 +70,7 @@ def measure_strip(
             geometry=_line_geom(facade),
             pituus_m=round(length, 3),
             ala_m2=None,
+            lock_tila="lukittu" if facade.verified else "esimerkki",
         )
     )
 
@@ -76,21 +82,35 @@ def measure_strip(
     if not area_ok:
         warnings.append("Pinta-aloja ei lasketa ilman tunnettua kaistan leveyttä (mittatikku, --kaistan-leveys tai tontin reuna).")
 
+    dual = dual_source_verdict(strip.area_m2_plot, strip.area_m2_buffer)
+    if strip.dual_note:
+        warnings.append(strip.dual_note)
+    if dual.status == "disagree":
+        warnings.append(dual.note)
+
     peite = _peite(override, occlusion, occlusion_note)
     if peite:
         warnings.append(f"Peite: {peite} — pinta-alat merkitään EI VARMENNETTU, metrejä ei teeskennellä tarkemmiksi.")
 
     shares = _shares_wall_to_edge(override, fractions, warnings)
+    shares = [(t, s) for t, s in shares if not is_clutter(t)]
     max_w = strip.max_width_m or strip.width_m or 0.0
+    from_photo = not bool(override and override.get("osuudet"))
+    warnings.append(
+        "Kaistakaistat jatkuvat julkisivun suuntaan (Valokuva-jatkuvuus), "
+        "ellei nurkkaa, tontin reunaa tai selvää materiaalivaihdosta."
+    )
 
     from shapely.geometry import shape as shp_shape
 
     strip_shp = shp_shape(strip.geometry) if strip.geometry else None
     bands = split_width_bands(facade, strip_shp, shares, max_w) if area_ok and shares else []
     band_by_type = {b.tyyppi: b for b in bands}
+    strip.work_edges = [(b.tyyppi, b.d0, b.d1) for b in bands]
 
+    min_share = 0.002 if (from_photo and photo_count) else 0.005
     for tyyppi, share in shares:
-        if share <= 0.005:
+        if share <= min_share:
             continue
         label = SURFACE_LABELS.get(tyyppi, tyyppi)
         linear = length * share if _along_wall_linear(tyyppi) else length
@@ -105,7 +125,7 @@ def measure_strip(
                 kind="linear",
                 value=round(length, 3),
                 unit="m",
-                luotettavuus=_linear_reliability(site, photo_confidence, override),
+                luotettavuus="wfs" if facade.verified else "esimerkki",
                 lahde="WFS-julkisivun pituus (rajan suuntainen viiva)",
                 huomio=(
                     "Lineaarinen piirre julkisivun suuntaan. Pituus = lukittu WFS-särmä, "
@@ -116,28 +136,36 @@ def measure_strip(
                 pituus_m=round(length, 3),
                 ala_m2=None,
                 peite=peite,
+                lock_tila="lukittu" if facade.verified else "esimerkki",
             )
             records.append(rec_lin)
 
-        if tyyppi in AREA_TYPES or (tyyppi in LINEAR_TYPES and area_ok):
+        if tyyppi in AREA_TYPES or (tyyppi in LINEAR_TYPES and (area_ok or from_photo)):
+            luot, lock = area_confidence(
+                peite=peite,
+                has_width=area_ok,
+                dual=dual,
+                tyyppi=tyyppi,
+                from_photo_shares=True,
+            )
             if not area_ok:
                 huomio = (
                     "Pinta-alaa ei lasketa: kaistan leveys on mittaamatta. "
                     f"WFS-julkisivun pituus {length:.2f} m. "
-                    "Anna --kaistan-leveys, mittatikku, tai hae tontin reuna."
+                    "Anna --kaistan-leveys, mittatikku, tai hae tontin reuna. "
+                    "Valokuva-osuus piirretään PRE-LOCK / EI LASKETTU (kuva > tyhjä kartta)."
                 )
-                luot = "epavarma"
                 area_val = None
             else:
                 area_val = None if poly_area is None else round(poly_area, 2)
-                luot = _area_reliability(site, strip.width_source, photo_confidence, override, peite)
                 huomio = (
-                    f"Kaistapolygoni seinästä ulos ({strip.clip}). "
-                    f"{width_note} {strip.huomio}"
+                    f"PRE-LOCK luokkajako (HSV/pinnat.json ei lukitse metrejä). "
+                    f"Kaistapolygoni seinästä ulos ({strip.clip}). {width_note} {strip.huomio}"
                 )
                 if peite:
-                    luot = "ei_varmennettu"
-                    huomio = f"EI VARMENNETTU ({peite}). {huomio} Neliöitä ei merkitä varmennetuiksi peitteen alla."
+                    huomio = f"EI VARMENNETTU (peite={peite}). {huomio} Neliöitä ei merkitä varmennetuiksi peitteen alla."
+                if dual.status == "disagree":
+                    huomio += f" Dual A/B (kaista yhteensä, ei luokka): {dual.note}"
 
             records.append(
                 SurfaceRecord(
@@ -158,6 +186,7 @@ def measure_strip(
                     pituus_m=round(linear, 3) if tyyppi in LINEAR_TYPES else None,
                     ala_m2=area_val,
                     peite=peite,
+                    lock_tila=lock,
                 )
             )
 
@@ -171,11 +200,12 @@ def measure_strip(
                         unit="m",
                         luotettavuus="arvio" if photo_count else "epavarma",
                         lahde="valokuvien osuus (leveyssuunta) × WFS-pituus — ei pinta-ala",
-                        huomio="Vain lineaarinen tunnusluku. m² = EI LASKETTU ilman leveyttä.",
+                        huomio="HSV-osuus ei ole lukittu metri. m² = EI LASKETTU ilman leveyttä.",
                         share=share,
                         geometry=_line_geom(facade),
                         pituus_m=round(share * length, 3),
                         ala_m2=None,
+                        lock_tila="arvio" if photo_count else "ei_laskettu",
                     )
                 )
 
@@ -193,9 +223,10 @@ def measure_strip(
                     unit="kpl",
                     luotettavuus="arvio",
                     lahde="valokuvat (heuristiikka)",
-                    huomio=note,
+                    huomio=note + " ARVIO (kappalelaskenta, ei WFS-lukko).",
                     share=0.0,
                     geometry=None,
+                    lock_tila="arvio",
                 )
             )
 
@@ -238,11 +269,12 @@ def _maybe_paatylaatta(
                 unit="m²",
                 luotettavuus="arvio",
                 lahde="ei mitattu",
-                huomio="Päätylaatta voi näkyä päätykuvissa. Palaa ei mitattu — EI LASKETTU (ei keksittyä m²).",
+                huomio="Päätylaatta voi näkyä päätykuvissa. Palaa ei mitattu — EI LASKETTU (ei keksittyä m²). ARVIO-moduuli.",
                 share=0.0,
                 geometry=None,
                 ala_m2=None,
                 peite=peite,
+                lock_tila="arvio",
             )
         )
         return
@@ -263,6 +295,7 @@ def _maybe_paatylaatta(
                 geometry=None,
                 ala_m2=None,
                 peite=peite,
+                lock_tila="arvio",
             )
         )
         return
@@ -294,6 +327,7 @@ def _maybe_paatylaatta(
                 geometry=None,
                 ala_m2=None,
                 peite=peite,
+                lock_tila="arvio",
             )
         )
         return
@@ -319,6 +353,7 @@ def _maybe_paatylaatta(
             geometry=mapping(geom) if geom is not None else None,
             ala_m2=area,
             peite=peite,
+            lock_tila="arvio" if luot != "ei_varmennettu" else "ei_varmennettu",
         )
     )
 
@@ -362,7 +397,7 @@ def _shares_wall_to_edge(
         return []
     warnings.append(
         "Pintaosuudet on arvioitu valokuvien väreistä leveyssuunnassa (seinä → reuna). "
-        "Tämä ei ole paikannettu maastomittaus."
+        "HSV-osuudet EIVÄT ole lukittuja metrejä (PRE-LOCK)."
     )
     return _order_wall_to_edge(ordered)
 
@@ -395,7 +430,10 @@ def _peite(override: dict[str, Any] | None, occlusion: bool, occlusion_note: str
             return ",".join(str(x) for x in raw)
         return str(raw)
     if occlusion:
-        return occlusion_note or "autot"
+        note = occlusion_note or "autot"
+        if "peite=" in note:
+            return note.split("peite=", 1)[1].rstrip(")")
+        return note
     return None
 
 

@@ -4,6 +4,7 @@ from shapely.geometry import LineString, shape
 
 from vesivek.measure.kaista import SEARCH_M, _clean
 from vesivek.models import Facade, QcTick
+from vesivek.valokuva import SKIP_TICK_CLASSES, WORK_SURFACE_TICK_CLASSES, assert_unique_mv_ids, mv_work_prefix
 
 
 def build_mittaviivat(
@@ -11,12 +12,15 @@ def build_mittaviivat(
     strip,
     *,
     spacing_m: float = 1.0,
-    work_band_m: float | None = None,
+    work_edges: list | None = None,
 ) -> list[QcTick]:
     """
-    Optional QC ticks with unique MV-* ids:
-    - wall → strip boundary, ~1 m along the facade
-    - short wall ↔ work-surface ticks (seinänvierus / first metres)
+    Valokuva mittaviivat (QC layer; final presentation may hide ticks):
+
+    1. Buildings: MV-### wall→boundary + ~1 m ticks, snapped to WFS facade
+    2. Work surfaces: short wall↔edge with MV-ASF-*, MV-LAATTA-*, MV-TERASSI-*,
+       MV-KATOS-*, MV-SEINA-*, MV-SEPELI-*, MV-RAJA-*, MV-PAATY-*
+    3. No ticks on grass / single bush / occlusion fills
     """
     if strip is None:
         return []
@@ -27,7 +31,9 @@ def build_mittaviivat(
         return []
 
     ticks: list[QcTick] = []
-    n = 1
+    n_bldg = 1
+    work_counters: dict[str, int] = {k: 1 for k in WORK_SURFACE_TICK_CLASSES}
+
     for edge in facade.edges:
         steps = max(1, int(round(edge.length_m / max(spacing_m, 0.2))))
         for i in range(steps + 1):
@@ -46,32 +52,58 @@ def build_mittaviivat(
             length = float(LineString([(px, py), (ex, ey)]).length)
             if length < 0.05:
                 continue
+            kind = "seina-raja" if i % 5 == 0 else "tikku-1m"
             ticks.append(
                 QcTick(
-                    id=f"MV-{n:03d}",
-                    kind="seina-raja" if i % 5 == 0 else "tikku-1m",
+                    id=f"MV-{n_bldg:03d}",
+                    kind=kind,
                     start=(float(px), float(py)),
                     end=(ex, ey),
                     length_m=round(length, 3),
-                    huomio="seinä → kaistan ulkoreuna" if i % 5 == 0 else "1 m -kokeilu seinältä rajalle",
+                    huomio="seinä → kaistan ulkoreuna (taso 1, WFS-snap)" if kind == "seina-raja" else "1 m -tikku seinältä rajalle (taso 1)",
+                    tyyppi="rakennus",
+                    tier=1,
                 )
             )
-            n += 1
-            short_w = work_band_m if work_band_m and work_band_m > 0 else min(1.2, length * 0.2)
-            if short_w > 0.15 and i % 5 == 0:
-                sx = px + nx * short_w
-                sy = py + ny * short_w
+            n_bldg += 1
+
+            if i % 5 != 0:
+                continue
+            for item in work_edges or []:
+                if len(item) == 3:
+                    tyyppi, _d0, d1 = item
+                elif len(item) == 2:
+                    tyyppi, d1 = item
+                else:
+                    continue
+                if tyyppi in SKIP_TICK_CLASSES:
+                    continue
+                prefix = mv_work_prefix(tyyppi)
+                if not prefix:
+                    continue
+                short = float(d1)
+                if short < 0.12 or short > length + 0.05:
+                    short = min(short, length)
+                if short < 0.12:
+                    continue
+                idx = work_counters[tyyppi]
+                work_counters[tyyppi] = idx + 1
+                sx = px + nx * short
+                sy = py + ny * short
                 ticks.append(
                     QcTick(
-                        id=f"MV-{n:03d}",
-                        kind="pinta",
-                        start=(px, py),
-                        end=(sx, sy),
-                        length_m=round(short_w, 3),
-                        huomio="lyhyt seinä↔pintareuna (työkaista)",
+                        id=f"{prefix}-{idx:03d}",
+                        kind="tyokaista",
+                        start=(float(px), float(py)),
+                        end=(float(sx), float(sy)),
+                        length_m=round(short, 3),
+                        huomio=f"työkaista {tyyppi} seinä↔reuna (taso 2, WFS-snap)",
+                        tyyppi=tyyppi,
+                        tier=2,
                     )
                 )
-                n += 1
+
+    assert_unique_mv_ids([t.id for t in ticks])
     return ticks
 
 
@@ -85,6 +117,8 @@ def ticks_geojson(ticks: list[QcTick]) -> list[dict]:
                     "rooli": "mittaviiva",
                     "id": t.id,
                     "kind": t.kind,
+                    "tier": t.tier,
+                    "tyyppi": t.tyyppi,
                     "pituus_m": t.length_m,
                     "huomio": t.huomio,
                     "crs": "EPSG:3067",

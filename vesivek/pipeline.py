@@ -21,6 +21,7 @@ from vesivek.output.png import write_png
 from vesivek.wfs.chain import fetch_site
 from vesivek.wfs.ortho import fetch_ortho_png
 from vesivek.wfs.stub import StubWfsFetcher
+from vesivek.valokuva import dual_source_verdict, tyovaihe
 
 
 @dataclass
@@ -135,11 +136,12 @@ def run_measurement(req: RunRequest) -> MeasurementResult:
 
     ticks = []
     if req.mittaviivat and strip.geometry is not None:
-        work_w = None
-        seina = next((r for r in records if r.tyyppi == "seinänvierus" and r.kind == "area"), None)
-        if seina and seina.share and strip.max_width_m:
-            work_w = strip.max_width_m * seina.share
-        ticks = build_mittaviivat(facade, strip.geometry, spacing_m=1.0, work_band_m=work_w)
+        ticks = build_mittaviivat(
+            facade,
+            strip.geometry,
+            spacing_m=1.0,
+            work_edges=strip.work_edges,
+        )
 
     ortho_bytes = ortho_bbox = None
     if req.ortho:
@@ -169,6 +171,14 @@ def run_measurement(req: RunRequest) -> MeasurementResult:
         except Exception as exc:  # noqa: BLE001
             warnings.append(f"Ortoilmakuva ohitettiin: {exc}")
 
+    dual = dual_source_verdict(strip.area_m2_plot, strip.area_m2_buffer)
+    stage = tyovaihe(
+        has_wfs=bool(site.building),
+        has_photos_or_ortho=bool(photo_infos) or bool(req.ortho),
+        has_ticks=bool(ticks),
+        dual=dual,
+        one_facade=True,
+    )
     out_dir = _prepare_output_dir(req)
     result = MeasurementResult(
         site=site,
@@ -187,6 +197,8 @@ def run_measurement(req: RunRequest) -> MeasurementResult:
         ortho_bytes=ortho_bytes,
         ortho_bbox=ortho_bbox,
         mittaviivat=req.mittaviivat,
+        tyovaihe=stage,
+        dual_note=dual.note,
     )
     result.png_path = write_png(result, out_dir / "julkisivukaista.png")
     result.geojson_path = write_geojson(result, out_dir / "julkisivukaista.geojson")

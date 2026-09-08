@@ -156,18 +156,32 @@ def to_fm007_fractions(fractions: dict[str, float]) -> dict[str, float]:
 
 
 def detect_occlusion_arr(arr: np.ndarray) -> tuple[bool, str]:
-    """Heuristic for cars / large covers. Never used to invent m²."""
+    """Cars, pots, bikes-as-cover, shadow-as-cover. Never used to invent m²."""
     h, w = arr.shape[:2]
     ground = arr[int(h * 0.28) :, :, :]
     rgb = ground.astype(np.float32)
     mx = np.max(rgb, axis=2)
     mn = np.min(rgb, axis=2)
     sat = (mx - mn) / np.maximum(mx, 1.0)
-    # Pale vehicle bodies (white / light grey vans and SUVs).
+    hsv = _rgb_to_hsv(ground.astype(np.uint8))
+    hue, s255, v255 = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+    kinds: list[str] = []
     pale = (mx >= 175) & (sat < 0.22)
-    frac = float(pale.mean())
-    if frac >= 0.045:
-        return True, f"EI VARMENNETTU (peite=autot, vaalea peitto {frac*100:.0f} % maakaistasta)"
+    if float(pale.mean()) >= 0.045:
+        kinds.append("autot")
+    dark = v255 < 28
+    if float(dark.mean()) >= 0.12:
+        kinds.append("varjo")
+    pot = ((hue <= 25) | (hue >= 345)) & (s255 >= 80) & (v255 >= 80) & (v255 <= 210)
+    if float(pot.mean()) >= 0.03:
+        kinds.append("ruukut")
+    # Thin high-contrast metal-ish blobs (bikes) — conservative.
+    metal = (sat < 0.18) & (mx >= 90) & (mx <= 170)
+    if float(metal.mean()) >= 0.08 and float(pale.mean()) < 0.04:
+        kinds.append("pyorat")
+    if kinds:
+        joined = ",".join(kinds)
+        return True, f"EI VARMENNETTU (peite={joined})"
     return False, ""
 
 

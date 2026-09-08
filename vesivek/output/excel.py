@@ -7,6 +7,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from vesivek.models import MeasurementResult
+from vesivek.valokuva import TYOJARJESTYS, coded_lock_rows, dual_source_verdict, strip_total_lock
 
 HEADER_FILL = PatternFill("solid", fgColor="E85D04")
 HEADER_FONT = Font(color="FFFFFF", bold=True)
@@ -20,6 +21,7 @@ def write_excel(result: MeasurementResult, path: Path) -> Path:
     wb = Workbook()
 
     _summary(wb.active, result)
+    _valokuva_locks(wb.create_sheet("Valokuva-lukot"), result)
     _wfs_length(wb.create_sheet("WFS-pituus"), result)
     _linear(wb.create_sheet("Lineaariset"), result)
     _areas(wb.create_sheet("Pinta-alat"), result)
@@ -55,7 +57,7 @@ def _summary(ws, result: MeasurementResult) -> None:
     ws["A2"] = (
         "Yksi julkisivukaista (seinä → reuna -polygoni). "
         "Excel erottaa: (a) lukittu WFS-pituus, (b) lineaariset m, (c) m² vain kun leveys tunnetaan. "
-        "Ei salaojaa, ei sadevesiputkia."
+        "Valokuva-lukot: PRE-LOCK kunnes dual ±10 %; peite → EI VARMENNETTU. Ei salaojaa, ei sadevesiputkia."
     )
 
     width = result.strip_width_m if result.strip_width_m is not None else "MITTAAMATTA"
@@ -74,6 +76,10 @@ def _summary(ws, result: MeasurementResult) -> None:
         ("Leveyden lähde", result.strip_width_source),
         ("Kaistan clip", result.strip.clip if result.strip else "—"),
         ("Kaista yhteensä m²", result.strip.area_m2 if result.strip and result.strip.area_m2 is not None else "EI LASKETTU"),
+        ("Kaista A m² (tontti)", result.strip.area_m2_plot if result.strip else "—"),
+        ("Kaista B m² (puskuri)", result.strip.area_m2_buffer if result.strip else "—"),
+        ("Dual", (result.strip.dual_status if result.strip else "—") + " — " + (result.dual_note or "")),
+        ("Työvaihe 0–3", result.tyovaihe),
         ("Mittatikku", result.stick.huomio),
         ("Peite / occlusion", result.occlusion_note or ("kyllä" if result.occlusion else "ei")),
         ("Valokuvia", len(result.photos)),
@@ -102,11 +108,32 @@ def _summary(ws, result: MeasurementResult) -> None:
     ws.cell(
         r,
         1,
-        "Sääntö: metrejä ei keksitä. (a) WFS-särmä on ainoa lukittu pituus. "
-        "(b) Lineaariset m ovat WFS-pituus × osuus tai koko särmä (rajapuska). "
-        "(c) m² vain kaistapolygonista kun leveys tunnetaan (mittatikku, --kaistan-leveys tai tontin reuna).",
+        "Sääntö (Valokuva neliötapa): metrejä ei keksitä. (a) WFS-särmä EPSG:3067 on ainoa lukittu pituus. "
+        "(b) Lineaariset m. (c) m² vain kaistapolygonista kun leveys tunnetaan. "
+        "Kaksi lähdettä ±10 % = dual_ok; >10 % raportoi A ja B, ei keskiarvoa. "
+        "HSV-osuudet = PRE-LOCK, eivät lukittuja metrejä. Peite → EI VARMENNETTU.",
     )
     _autosize(ws, [32, 90, 24, 24])
+
+
+def _valokuva_locks(ws, result: MeasurementResult) -> None:
+    _style_header(ws, ["Tila", "Lukko", "Selite"])
+    for status, key, note in coded_lock_rows():
+        ws.append([status, key, note])
+        last = ws.max_row
+        ws.cell(last, 1).fill = LOCK_FILL if status == "KOODATTU" else WARN_FILL
+        ws.cell(last, 3).alignment = Alignment(wrap_text=True)
+    ws.append([])
+    ws.append(["Työvaihe", result.tyovaihe, TYOJARJESTYS[min(result.tyovaihe, 3)][1]])
+    ws.append(["Dual", result.strip.dual_status if result.strip else "none", result.dual_note or ""])
+    ws.append(
+        [
+            "CRS",
+            result.site.crs,
+            "m² vain kun kaista on pinottu WFS-särmään tässä CRS:ssä.",
+        ]
+    )
+    _autosize(ws, [12, 28, 100])
 
 
 def _wfs_length(ws, result: MeasurementResult) -> None:
@@ -166,7 +193,9 @@ def _areas(ws, result: MeasurementResult) -> None:
             "Kohde",
             "Tyyppi",
             "ala_m2",
+            "ala_m2_B",
             "Luotettavuus",
+            "lock_tila",
             "Leveyden lähde",
             "Peite",
             "Osuus (seinästä ulos)",
@@ -175,12 +204,22 @@ def _areas(ws, result: MeasurementResult) -> None:
     )
     rows = [r for r in result.surfaces if r.kind == "area"]
     if result.strip and result.strip.area_m2 is not None:
+        luot, lock = strip_total_lock(
+            peite=result.occlusion_note or None,
+            dual=dual_source_verdict(result.strip.area_m2_plot, result.strip.area_m2_buffer),
+            wfs_verified=result.site.verified,
+        )
+        cell_a = result.strip.area_m2
+        if result.strip.dual_status == "disagree":
+            cell_a = result.strip.area_m2_plot
         ws.append(
             [
                 "Kaista yhteensä (polygoni)",
                 "kaista",
-                result.strip.area_m2,
-                "wfs" if result.site.verified and result.strip.clip.startswith("tontti") else result.strip.width_source,
+                cell_a if cell_a is not None else "EI LASKETTU",
+                result.strip.area_m2_buffer if result.strip.dual_status == "disagree" else "",
+                luot,
+                lock,
                 result.strip.width_source,
                 result.occlusion_note or "",
                 1.0,
@@ -198,7 +237,9 @@ def _areas(ws, result: MeasurementResult) -> None:
                 rec.label_fi,
                 rec.tyyppi,
                 cell_val,
+                rec.ala_m2_b if rec.ala_m2_b is not None else "",
                 rec.luotettavuus,
+                rec.lock_tila,
                 result.strip_width_source,
                 rec.peite or "",
                 round(rec.share, 4) if rec.share else "",
@@ -206,15 +247,21 @@ def _areas(ws, result: MeasurementResult) -> None:
             ]
         )
         last = ws.max_row
-        if rec.luotettavuus in {"epavarma", "esimerkki", "ei_varmennettu"} or val is None:
+        if rec.luotettavuus in {"epavarma", "esimerkki", "ei_varmennettu", "pre_lock"} or rec.lock_tila in {
+            "pre_lock",
+            "ei_varmennettu",
+            "ei_laskettu",
+            "arvio",
+        } or val is None:
             ws.cell(last, 3).fill = UNSURE_FILL
-            ws.cell(last, 4).fill = UNSURE_FILL
+            ws.cell(last, 5).fill = UNSURE_FILL
+            ws.cell(last, 6).fill = WARN_FILL if rec.lock_tila == "pre_lock" else UNSURE_FILL
         elif rec.luotettavuus == "wfs":
-            ws.cell(last, 4).fill = LOCK_FILL
+            ws.cell(last, 5).fill = LOCK_FILL
         else:
-            ws.cell(last, 4).fill = WARN_FILL
-        ws.cell(last, 8).alignment = Alignment(wrap_text=True)
-    _autosize(ws, [36, 16, 14, 16, 18, 22, 18, 80])
+            ws.cell(last, 5).fill = WARN_FILL
+        ws.cell(last, 10).alignment = Alignment(wrap_text=True)
+    _autosize(ws, [36, 16, 14, 14, 16, 14, 18, 22, 18, 80])
 
 
 def _photos(ws, result: MeasurementResult) -> None:
@@ -267,7 +314,10 @@ def _wfs(ws, result: MeasurementResult) -> None:
 
 
 def _ticks(ws, result: MeasurementResult) -> None:
-    _style_header(ws, ["ID", "Tyyppi", "pituus_m", "Huomio"])
+    _style_header(ws, ["ID", "Taso", "Tyyppi", "kind", "pituus_m", "Huomio"])
     for t in result.qc_ticks:
-        ws.append([t.id, t.kind, t.length_m, t.huomio])
-    _autosize(ws, [12, 16, 14, 60])
+        ws.append([t.id, t.tier, t.tyyppi, t.kind, t.length_m, t.huomio])
+    ids = [t.id for t in result.qc_ticks]
+    ws.append([])
+    ws.append(["uniikit ID", "kyllä" if len(ids) == len(set(ids)) else "EI", len(ids), "", "", "Valokuva: MV-* uniikit"])
+    _autosize(ws, [16, 8, 16, 14, 14, 70])

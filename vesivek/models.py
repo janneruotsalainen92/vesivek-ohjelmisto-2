@@ -69,11 +69,13 @@ class StickResult:
 @dataclass
 class QcTick:
     id: str
-    kind: str  # seina-raja | tikku-1m | pinta
+    kind: str  # seina-raja | tikku-1m | pinta | tyokaista
     start: tuple[float, float]
     end: tuple[float, float]
     length_m: float
     huomio: str = ""
+    tyyppi: str = ""
+    tier: int = 1
 
 
 @dataclass
@@ -88,6 +90,11 @@ class StripInfo:
     clip: str  # tontti | puskuri | puuttuu
     area_m2: float | None
     huomio: str = ""
+    area_m2_plot: float | None = None
+    area_m2_buffer: float | None = None
+    dual_status: str = "none"
+    dual_note: str = ""
+    work_edges: list = field(default_factory=list)
 
 
 @dataclass
@@ -105,6 +112,9 @@ class SurfaceRecord:
     pituus_m: float | None = None
     ala_m2: float | None = None
     peite: str | None = None
+    lock_tila: str = "pre_lock"
+    ala_m2_b: float | None = None
+    lahde_b: str | None = None
 
 
 @dataclass
@@ -128,3 +138,5 @@ class MeasurementResult:
     ortho_bytes: bytes | None = None
     ortho_bbox: tuple[float, float, float, float] | None = None
     mittaviivat: bool = False
+    tyovaihe: int = 0
+    dual_note: str = ""
