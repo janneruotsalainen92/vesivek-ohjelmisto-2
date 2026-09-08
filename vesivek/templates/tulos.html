@@ -40,7 +40,8 @@
         <thead>
           <tr>
             <th>Kohde</th>
-            <th>Määrä</th>
+            <th>WFS / lineaarinen m</th>
+            <th>m²</th>
             <th>Luotettavuus</th>
             <th>Huomio</th>
           </tr>
@@ -50,8 +51,15 @@
           <tr>
             <td>{{ rec.label_fi }}</td>
             <td>
-              {% if rec.value is none %}EI LASKETTU
-              {% else %}{{ '%.2f'|format(rec.value) }} {{ rec.unit }}{% endif %}
+              {% if rec.kind in ['linear', 'wfs'] %}
+                {% if rec.value is none %}EI LASKETTU{% else %}{{ '%.2f'|format(rec.value) }} m{% endif %}
+              {% elif rec.pituus_m is not none %}{{ '%.2f'|format(rec.pituus_m) }} m
+              {% else %}—{% endif %}
+            </td>
+            <td>
+              {% if rec.kind == 'area' %}
+                {% if rec.value is none %}EI LASKETTU{% else %}{{ '%.2f'|format(rec.value) }} m²{% endif %}
+              {% else %}—{% endif %}
             </td>
             <td>{{ rec.luotettavuus }}</td>
             <td>{{ rec.huomio }}</td>

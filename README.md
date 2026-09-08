@@ -1,31 +1,33 @@
-# Vesivek Ohjelma — MVP v1
+# Vesivek Ohjelma — bot-kokeilu
 
-Paikallinen CLI + kevyt web-UI **ihmismittauksen testaamiseen** (Vesivek Salaojat / suomalainen rakentaminen).
+Paikallinen CLI + kevyt web-UI **ihmismittauksen testaamiseen** (suomalainen rakentaminen).
 
-**Osoite + työmaakuvat → WFS-lukittu runko (EPSG:3067) + yhden julkisivukaistan pinta-alat (PNG + Excel).**
+**Ei virallinen tuote.**
 
-## v1 tekee
+Osoite + työmaakuvat → WFS-lukittu runko (EPSG:3067) + **yhden julkisivukaistan aluepolygonit** (PNG + Excel).
 
-- Hakee avoimen kunnallisen / HSY-tyyppisen **WFS-rakennuksen ja tontin** (TM35FIN, `EPSG:3067`).
-- **Lukitsee seinän / julkisivun pituuden** WFS-geometriaan. Metrejä ei keksitä kuvista.
-- Ihmisen valitsema **yksi julkisivu / kaista** (pohjoinen / itä / etelä / länsi tai yksittäinen särmä).
-- Lukee **kaikki valokuvat** kansioista (ei 6 kuvan rajaa).
-- Valinnainen **mittatikku / mittakeppi** (oletuspituus **1.00 m**) mittakaavaksi, jos tikku näkyy kuvissa.
-- Luokittelee kaistan pintoja: asfaltti, laatta, sepeli, nurmikko, pensas, multa… (arvio kuvista).
-- Lineaariset piirteet (esim. pensas) **metreinä**; puut **kappaleina**.
-- Tulostaa **PNG-overlayn**, **Excelin (.xlsx)** ja **GeoJSONin**.
-- Merkitsee **epävarmat / varmistamattomat** arvot selvästi.
+## Mitä muuttui (0.2)
 
-## v1 ei tee
+v1 jakoi julkisivun pituuden “piirakaksi” (osuus × seinän pituus). Nyt **kaista on polygoni seinästä ulos** tontin/orton reunaan tai `--kaistan-leveys` -puskuriin.
 
-- Ei salaojaa, ei sadevesiputkia.
-- Ei täyttä kuivatus- / hulevesisuunnitelmaa.
-- Ei mittaa koko tonttia eikä useaa julkisivua yhdellä ajolla.
-- Ei keksi kaistan leveyttä eikä neliöitä, jos leveyttä ei ole mitattu (mittatikku tai `--kaistan-leveys`).
+| Ennen | Nyt |
+| --- | --- |
+| Pintaosuudet seinän pituudella | Pintaosuudet **leveyssuunnassa** (seinä → reuna) |
+| m² ≈ pituus × leveys × osuus | m² = **kaistapolygonin ala**, vain kun leveys tunnetaan |
+| PNG: rakennuksen ääriviiva | PNG: tontti + orto + **aluepolygonit** + valinnaiset MV-* mittaviivat |
+| Luokat: asfaltti, laatta, sepeli, pensas… | FM-007: `seinänvierus`, `rajapuska`, `päätylaatta`, `asfaltti`, `sepeli`, `laatta` |
+| Excel: yksi “Määrä”-sarake | Erilliset: **(a) WFS-pituus**, **(b) lineaariset m**, **(c) m²** |
+
+Peitetyt alat (autot yms.) merkitään **EI VARMENNETTU** — neliöitä ei teeskennellä tarkemmiksi. Ilman leveyttä m² = **EI LASKETTU**. Metrejä ei keksitä.
+
+## Ei tee
+
+- Ei salaojaa, ei sadevesiputkia, ei täyttä kuivatussuunnitelmaa.
+- Ei keksi kaistan leveyttä eikä neliöitä ilman mittatikkua, `--kaistan-leveys` tai WFS-tontin reunaa.
 
 ---
 
-## Asennus (paikallisesti)
+## Asennus
 
 Python 3.11+.
 
@@ -35,25 +37,28 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-## Demo (README-polku)
+## Mailatie 14, Vantaa (pohjoinen kaista)
 
-Esimerkkikuvat: `examples/kuvat/` (työmaakuva + synteettinen 1 m tikku). Sama tikku on myös `examples/kuvat_mittatikku/`.
-
-### 1) Live-WFS + kuvakansio (suositeltu)
-
-Helsingin avoin WFS toimii ilman avainta.
+Live HSY-rakennus + Vantaan tontti + orto. `pinnat.json` on valokuvien leveysosuus, **ei** FM-007-lukujen kopio.
 
 ```bash
-vesivek julkisivut --osoite "Pohjoinen Hesperiankatu 3, Helsinki"
+vesivek julkisivut --osoite "Mailatie 14, Vantaa" --wfs live
 
 vesivek mittaa \
-  --osoite "Pohjoinen Hesperiankatu 3, Helsinki" \
-  --kuvat examples/kuvat \
-  --julkisivu etela \
-  --mittatikku 1.00
+  --osoite "Mailatie 14, Vantaa" \
+  --julkisivu pohjoinen \
+  --pinnat examples/mailatie-14/pinnat.json \
+  --kuvat examples/mailatie-14 \
+  --wfs live
 ```
 
-Jos haluat neliöt (m²), anna mitattu kaistan leveys — sitä ei arvata:
+Ilman `--kaistan-leveys` leveys tulee tontin reunasta (WFS-geometria). Autopeite → EI VARMENNETTU. Päätylaatta ilman mitattua palaa → EI LASKETTU.
+
+Lisää ohje: `examples/mailatie-14/README.md`. Maastokuvat A–F voi pudottaa samaan kansioon.
+
+FM-007-lukkoihin verrataan **suuntaa**, ei pakoteta lukuja (asfaltti ~223 m² EI VARMENNETTU, seinänvierus ~36, sepeli ~36, rajapuska ~29 m² + 53.86 m viiva, päätylaatta ARVIO ~2.2).
+
+## Demo (Helsinki / offline)
 
 ```bash
 vesivek mittaa \
@@ -64,7 +69,7 @@ vesivek mittaa \
   --kaistan-leveys 1.20
 ```
 
-### 2) Offline / stub (verkko tai WFS jumissa)
+Offline:
 
 ```bash
 vesivek mittaa \
@@ -75,84 +80,102 @@ vesivek mittaa \
   --kaistan-leveys 1.20
 ```
 
-Stub käyttää `data/sample/*.geojson` (oikea WFS-ote: Pohjoinen Hesperiankatu 3 / tontti 91-14-462-17, EPSG:3067). **Metrit ovat tämän esimerkkikohteen geometriaa**, eivät satunnaisen syötetyn osoitteen mittoja.
+Stub = `data/sample/*.geojson` (Pohjoinen Hesperiankatu 3). **Ei Mailatien metrejä.**
 
-### 3) Web-UI
+### Web-UI
 
 ```bash
 vesivek web --host 127.0.0.1 --port 5050
 ```
 
-Avaa <http://127.0.0.1:5050> — suomenkieliset kentät: osoite → valitse julkisivu → lataa kuvat → PNG + Excel.
-
-### Tulokset
-
-Kirjoitetaan hakemistoon `tulokset/<osoite>-<aika>/`:
+### Tulokset (`tulokset/<osoite>-<aika>/`)
 
 | Tiedosto | Sisältö |
 | --- | --- |
-| `julkisivukaista.png` | WFS-runko + valitun julkisivun nimetyt pinnat |
-| `mittaus.xlsx` | m / m² / kpl, luotettavuus, lähde, huomiot |
-| `julkisivukaista.geojson` | sama geometria EPSG:3067 |
+| `julkisivukaista.png` | Orto + tontti + kaistan luokkaplpolygonit + WFS-särmä + MV-* |
+| `mittaus.xlsx` | WFS-pituus / Lineaariset / Pinta-alat erikseen |
+| `julkisivukaista.geojson` | EPSG:3067 |
 | `huomiot.txt` | epävarmuudet |
 
 ---
 
-## Mitä lukitaan, mitä merkitään epävarmaksi
+## m²-sääntö
 
-| Suure | Lähde | Luotettavuus |
-| --- | --- | --- |
-| Rakennuksen / tontin runko | Avoin WFS | `wfs` jos live-osuma |
-| Julkisivun pituus (m) | WFS-särmä EPSG:3067 | `wfs` / `esimerkki` |
-| Pintaosuudet (asfaltti…) | Valokuvat tai `pinnat.json` | `arvio` / `kayttaja` |
-| Kaistan leveys (m) | `--kaistan-leveys` tai tunnistettu 1 m tikku | `kayttaja` / `mittatikku` |
-| Pinta-ala (m²) | WFS-pituus × leveys | vain jos leveys on annettu/tunnistettu |
-| Puut (kpl) | Kuvahaku | aina `arvio` |
+Pinta-ala lasketaan **vain** kun kaistan leveys tunnetaan:
 
-**Leveyttä ei ole oletuksena.** Ilman sitä Excelissä m² = `EI LASKETTU` (punainen), mutta WFS-pituus ja lineaariset osuudet jäävät.
+1. `--kaistan-leveys` (käyttäjä), tai
+2. tunnistettu mittatikku kuvissa, tai
+3. WFS-tontin reuna (seinä → kiinteistöraja, ei arvaus).
+
+Muuten Excelissä `ala_m2` = `EI LASKETTU`. Lineaarinen WFS-pituus säilyy.
 
 ---
 
-## WFS-liitäntä (pluggable)
+## Valokuva-lukot (perintö, ei rinnakkainen oppi)
+
+Ketjun lukot on koodattu `vesivek/valokuva.py`:stä. Strip, Excel ja PNG **perivät** ne.
+
+### Koodattu
+
+| Lukko | Toteutus |
+| --- | --- |
+| Peite / EI VARMENNETTU | Autot, ruukut, pyörät, varjo → `ei_varmennettu`. m² ei teeskennellä tarkaksi. |
+| ARVIO | Päätylaatta ja kpl-laskenta. |
+| PRE-LOCK | Luokka-m² ja yhden lähteen kaista. HSV-osuudet **eivät** ole lukittuja metrejä. |
+| Jatkuvuus | Kaistat julkisivun suuntaan; katkaisu vain nurkka / tontin reuna / selvä materiaali. |
+| Neliötapa | m² vain WFS-särmään EPSG:3067 pinottuna, kun leveys tunnetaan. |
+| Dual ±10 % | Tontti (A) vs puskuri/tikku (B). Sovittu → dual_ok. Ero >10 % → raportoi A **ja** B, **ei keskiarvoa**. |
+| Yksi lähde | Photo-only / yksi lähde → dashed / PRE-LOCK. |
+| Kuva > tyhjä kartta | Valokuvan luokka piirretään katkoviivalla, ei jätetä pois. |
+| MV-* tasot | 1: `MV-###` seinä→raja + 1 m. 2: `MV-ASF-*`, `MV-LAATTA-*`, `MV-TERASSI-*`, `MV-KATOS-*`, `MV-SEINA-*`, `MV-SEPELI-*`, `MV-RAJA-*`, `MV-PAATY-*`. Ei nurmikkoa / pensasta / peitefilliä. |
+| WFS-snap | Viivat lähtevät WFS-julkisivusärmästä. QC-kerros; `--no-mittaviivat` piilottaa. |
+| Työjärjestys 0→3 | `tyovaihe` kenttä + Excel-välilehti Valokuva-lukot. |
+| Excel a/b/c | WFS-pituus, lineaariset m, m² erillään. |
+
+### TODO (ei tässä bot-kokeilussa)
+
+- Asfaltin automaattiluokitus **ortopikseleistä** (orto on vain tausta)
+- Drone
+- Ihmisen kuittaus PRE-LOCK → lukittu
+- Epäsäännölliset FM-007-polygonit (nyt leveyskaistat)
+- Varjo vs peite -erottelu, täysi ruukku/pyörä-CV
+- Lista↔suunnitelma -editori
+
+---
+
+## WFS
 
 Oletusketju (`--wfs auto`):
 
-1. **Helsingin avoin WFS** — `https://kartta.hel.fi/ws/geoserver/avoindata/wfs`  
-   Tasot: `avoindata:Rakennukset_alue`, `avoindata:Kiinteisto_alue`  
-   Ei API-avainta. CQL `DWITHIN` / `INTERSECTS`, `srsName=EPSG:3067`.
-2. **HSY avoin WFS** — `https://kartta.hsy.fi/geoserver/wfs`  
-   Taso: `pks_rakennukset_paivittyva` (pääkaupunkiseutu).
-3. **Stub** — `data/sample/rakennus_3067.geojson` + `tontti_3067.geojson`.
+1. **Helsingin avoin WFS** — rakennus + kiinteistö (Helsingin osoitteet)
+2. **HSY** — `pks_rakennukset_paivittyva` (osoite-osuus `katu` + `osno1`, ei pelkkä lähin piste)
+3. **Vantaa** — `kiinteisto:kiinteisto` täydentää tontin; `gis:rakennukset` varalla
+4. **Stub** — `data/sample`
 
-Osoite geokoodataan Nominatimilla (User-Agent asetettu) ja muunnetaan `EPSG:3067` (`pyproj`).
+Orto: Vantaan WMS `taustakartta:ortoilmakuva` (EPSG:3067), Helsinki WMS varalla.
 
-### Oma WFS-ote
-
-```bash
-vesivek mittaa --osoite "Oma kohde" --kuvat examples/kuvat --geojson /polku/ote.geojson --julkisivu etela
-```
-
-Tiedoston tulee olla **EPSG:3067** (easting, northing metreinä). GeoJSON merkitään ei-varmennetuksi, kunnes se on virallinen WFS-vienti.
-
-### Uusi hakija koodissa
-
-Toteuta `fetch_site(easting, northing, address) -> SiteFrame | None` (`vesivek/wfs/protocol.py`) ja rekisteröi se `vesivek/wfs/chain.py` live-listaan. Älä palauta keksittyä geometriaa “varmennettuna”.
-
-`--wfs live` epäonnistuu, jos verkko tai avaimet estävät haun — metrejä ei täytetä stubilla hiljaa.
+`--wfs live` epäonnistuu jos verkko estää — metrejä ei täytetä stubilla hiljaa.
 
 ---
 
 ## Valinnainen `pinnat.json`
 
-Jos automaattinen väriarvio ei riitä testissä, anna osuudet itse (`data/sample/pinnat.example.json`):
+Osuudet ovat **seinästä ulos** (`jaottelu: seinasta`):
 
-```bash
-vesivek mittaa \
-  --osoite "Pohjoinen Hesperiankatu 3, Helsinki" \
-  --kuvat examples/kuvat \
-  --julkisivu etela \
-  --pinnat data/sample/pinnat.example.json
+```json
+{
+  "jaottelu": "seinasta",
+  "peite": "autot",
+  "osuudet": [
+    { "tyyppi": "seinänvierus", "osuus": 0.15 },
+    { "tyyppi": "asfaltti", "osuus": 0.62 },
+    { "tyyppi": "sepeli", "osuus": 0.16 },
+    { "tyyppi": "rajapuska", "osuus": 0.07 }
+  ]
+}
 ```
+
+QC-mittaviivat: `--mittaviivat` (oletus, QC-kerros) / `--no-mittaviivat` (piilota esityksestä). Tunnisteet `MV-###` (rakennus) ja `MV-ASF-*` / `MV-SEINA-*` … (työkaista).
 
 ---
 
@@ -166,4 +189,4 @@ pytest -q
 
 ## English summary
 
-v1 is a **single-facade / strip** measurement tool. Building edges come from Finnish open WFS in **EPSG:3067**. Photos classify surfaces; they do **not** invent wall metres. Areas (m²) appear only when strip width is known (1 m stick in photos or `--kaistan-leveys`). Unverified values are labelled. No drainage pipes, no full stormwater plan.
+Bot experiment (not a product). One facade **strip polygon** from the WFS wall out to the plot edge or a measured buffer. Areas (m²) only when width is known and pinned to EPSG:3067. Class splits stay **PRE-LOCK**; occluded surfaces **EI VARMENNETTU**. Dual sources >10% report A and B, no average. No drainage pipes.

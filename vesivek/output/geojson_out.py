@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from vesivek.measure.qc import ticks_geojson
 from vesivek.models import MeasurementResult
 
 
@@ -27,7 +28,14 @@ def write_geojson(result: MeasurementResult, path: Path) -> Path:
     if result.site.plot:
         plot = dict(result.site.plot)
         pprops = dict(plot.get("properties") or {})
-        pprops.update({"rooli": "tontti", "crs": "EPSG:3067", "wfs_lukittu": result.site.verified})
+        pprops.update(
+            {
+                "rooli": "tontti",
+                "crs": "EPSG:3067",
+                "wfs_lukittu": result.site.verified,
+                "lahde": result.site.plot_source or result.site.source_name,
+            }
+        )
         plot["properties"] = pprops
         features.append(plot)
 
@@ -48,6 +56,26 @@ def write_geojson(result: MeasurementResult, path: Path) -> Path:
         }
     )
 
+    if result.strip and result.strip.geometry:
+        features.append(
+            {
+                "type": "Feature",
+                "properties": {
+                    "rooli": "kaista",
+                    "clip": result.strip.clip,
+                    "leveys_m": result.strip.width_m,
+                    "leveys_lahde": result.strip.width_source,
+                    "ala_m2": result.strip.area_m2,
+                    "ala_m2_plot": result.strip.area_m2_plot,
+                    "ala_m2_buffer": result.strip.area_m2_buffer,
+                    "dual": result.strip.dual_status,
+                    "huomio": result.strip.huomio,
+                    "crs": "EPSG:3067",
+                },
+                "geometry": result.strip.geometry,
+            }
+        )
+
     for rec in result.surfaces:
         if not rec.geometry:
             continue
@@ -60,9 +88,14 @@ def write_geojson(result: MeasurementResult, path: Path) -> Path:
                     "nimike": rec.label_fi,
                     "kind": rec.kind,
                     "arvo": rec.value,
+                    "pituus_m": rec.pituus_m,
+                    "ala_m2": rec.ala_m2,
                     "yksikko": rec.unit,
                     "luotettavuus": rec.luotettavuus,
+                    "lock_tila": rec.lock_tila,
                     "lahde": rec.lahde,
+                    "peite": rec.peite,
+                    "ala_m2_b": rec.ala_m2_b,
                     "huomio": rec.huomio,
                     "crs": "EPSG:3067",
                 },
@@ -70,13 +103,18 @@ def write_geojson(result: MeasurementResult, path: Path) -> Path:
             }
         )
 
+    features.extend(ticks_geojson(result.qc_ticks))
+
     fc = {
         "type": "FeatureCollection",
-        "name": "vesivek_v1_julkisivukaista",
+        "name": "vesivek_julkisivukaista",
         "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::3067"}},
         "properties": {
             "osoite": result.site.address_query,
-            "varoitus": "v1: ei putkia. Epävarmat pinta-alat merkitty luotettavuus-kenttään.",
+            "varoitus": (
+                "bot-kokeilu: ei putkia. m² vain kun leveys tunnetaan. "
+                "Epävarmat / peitetyt pinta-alat merkitty luotettavuus-kenttään."
+            ),
         },
         "features": features,
     }

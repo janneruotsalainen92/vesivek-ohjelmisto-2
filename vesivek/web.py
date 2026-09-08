@@ -103,5 +103,5 @@ def create_app() -> Flask:
 
 def serve(host: str = "127.0.0.1", port: int = 5050) -> None:
     app = create_app()
-    print(f"Vesivek Ohjelma v1  →  http://{host}:{port}")
+    print(f"Vesivek Ohjelma bot-kokeilu  →  http://{host}:{port}")
     app.run(host=host, port=port, debug=False)

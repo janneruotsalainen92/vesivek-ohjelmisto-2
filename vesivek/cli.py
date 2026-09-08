@@ -13,7 +13,10 @@ from vesivek.wfs.chain import list_fetchers
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="vesivek",
-        description="Vesivek Ohjelma MVP v1 — osoite + kuvat → WFS-lukittu julkisivukaista (PNG + Excel).",
+        description=(
+            "Vesivek Ohjelma bot-kokeilu — osoite + kuvat → WFS-lukittu julkisivukaista "
+            "(seinä → reuna -polygoni, PNG + Excel). Ei virallinen tuote."
+        ),
     )
     parser.add_argument("--version", action="version", version=f"vesivek {__version__}")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -25,15 +28,32 @@ def main(argv: list[str] | None = None) -> int:
     _add_site_args(p_run)
     p_run.add_argument(
         "--kuvat",
-        nargs="+",
-        required=True,
-        help="Kansioita ja/tai kuvatiedostoja (ei 6 kuvan rajaa)",
+        nargs="*",
+        default=[],
+        help="Kansioita ja/tai kuvatiedostoja (ei 6 kuvan rajaa). Voi jättää tyhjäksi jos --pinnat.",
     )
     p_run.add_argument("--julkisivu", default="auto", help="etela|pohjoinen|ita|lansi|reuna-N|auto")
     p_run.add_argument("--mittatikku", type=float, default=DEFAULT_STICK_M, help="Mittatikun tunnettu pituus, m (oletus 1.00)")
-    p_run.add_argument("--kaistan-leveys", type=float, default=None, help="Kaistan leveys metreinä (käyttäjän mitta, ei keksitä)")
-    p_run.add_argument("--pinnat", type=Path, default=None, help="Valinnainen pinnat.json-osuustiedosto")
+    p_run.add_argument(
+        "--kaistan-leveys",
+        type=float,
+        default=None,
+        help="Kaistan leveys metreinä (käyttäjän mitta). Ilman tätä/tikkua/tonttia m² = EI LASKETTU.",
+    )
+    p_run.add_argument("--pinnat", type=Path, default=None, help="Valinnainen pinnat.json (osuudet seinästä ulos)")
     p_run.add_argument("--out", type=Path, default=None, help="Tuloshakemiston juuri (oletus ./tulokset)")
+    p_run.add_argument(
+        "--mittaviivat",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Piirrä QC-mittaviivat MV-* (oletus päällä; --no-mittaviivat poistaa)",
+    )
+    p_run.add_argument(
+        "--ortho",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Hae avoin ortoilmakuva PNG-taustaksi (oletus päällä; --no-ortho poistaa)",
+    )
 
     p_web = sub.add_parser("web", help="Käynnistä kevyt paikallinen käyttöliittymä")
     p_web.add_argument("--host", default="127.0.0.1")
@@ -59,7 +79,7 @@ def _add_site_args(p: argparse.ArgumentParser) -> None:
         "--wfs",
         choices=("auto", "live", "stub"),
         default="auto",
-        help="auto = live Helsinki/HSY, sitten stub; live = vain verkko; stub = esimerkki",
+        help="auto = live Helsinki/HSY/Vantaa, sitten stub; live = vain verkko; stub = esimerkki",
     )
     p.add_argument("--geojson", type=Path, default=None, help="Oma WFS-ote / GeoJSON EPSG:3067")
 
@@ -75,6 +95,7 @@ def _cmd_julkisivut(args: argparse.Namespace) -> int:
     print(f"CRS:    {site.crs}  lukittu={site.verified}")
     print(f"Lähde:  {site.source_name}")
     print(f"Id:     {site.feature_id or '—'}")
+    print(f"Tontti: {'kyllä' if site.plot else 'ei'}" + (f" ({site.plot_source})" if site.plot_source else ""))
     for w in site.warnings:
         print(f"Huomio: {w}")
     print()
@@ -102,22 +123,31 @@ def _cmd_mittaa(args: argparse.Namespace) -> int:
         geojson=args.geojson,
         pinnat=args.pinnat,
         output_dir=args.out,
+        mittaviivat=args.mittaviivat,
+        ortho=args.ortho,
     )
-    print("1) Geokoodataan osoite ja haetaan WFS-runko (EPSG:3067)…")
+    print("1) Geokoodataan osoite ja haetaan WFS-runko + tontti (EPSG:3067)…")
     try:
         result = run_measurement(req)
     except Exception as exc:
         print(f"Virhe: {exc}", file=sys.stderr)
         return 1
-    print(f"2) Runko: {result.site.source_name}  lukittu={result.site.verified}")
+    print(f"2) Runko: {result.site.source_name}  lukittu={result.site.verified}  tontti={'kyllä' if result.site.plot else 'ei'}")
     print(f"3) Julkisivu: {result.facade.label_fi}  {result.facade.length_m:.2f} m ({CRS_TM35FIN})")
     print(f"4) Valokuvia: {len(result.photos)}  mittatikku: {'kyllä' if result.stick.found else 'ei'}")
     width = result.strip_width_m
     print(f"5) Kaistan leveys: {width:.2f} m ({result.strip_width_source})" if width else "5) Kaistan leveys: MITTAAMATTA")
-    print("6) Pinnat:")
+    if result.strip:
+        ala = "EI LASKETTU" if result.strip.area_m2 is None else f"{result.strip.area_m2:.2f} m²"
+        print(f"   clip={result.strip.clip}  kaista yhteensä: {ala}")
+    print("6) Pinnat (m ja m² erillään):")
     for rec in result.surfaces:
-        val = "—" if rec.value is None else f"{rec.value:.3f} {rec.unit}"
-        print(f"   - {rec.label_fi:32} {val:16} [{rec.luotettavuus}]")
+        if rec.kind == "area":
+            val = "EI LASKETTU" if rec.value is None else f"{rec.value:.2f} m²"
+        else:
+            val = "—" if rec.value is None else f"{rec.value:.3f} {rec.unit}"
+        extra = f" peite={rec.peite}" if rec.peite else ""
+        print(f"   - {rec.label_fi:36} {val:16} [{rec.luotettavuus}]{extra}")
     print()
     print(f"PNG:     {result.png_path}")
     print(f"Excel:   {result.xlsx_path}")

@@ -4,11 +4,14 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from shapely.geometry import box
+
 from vesivek.config import DEFAULT_STICK_M, default_output_dir
 from vesivek.geocode import GeocodeHit, geocode_address
-from vesivek.measure.classify import classify_photo, merge_fractions
+from vesivek.measure.classify import classify_photo, merge_fractions, photos_have_occlusion
 from vesivek.measure.facade import choose_facade, list_facades
 from vesivek.measure.photos import collect_photos
+from vesivek.measure.qc import build_mittaviivat
 from vesivek.measure.stick import detect_stick, estimate_strip_width_m
 from vesivek.measure.strip import load_surface_override, measure_strip
 from vesivek.models import Facade, MeasurementResult, SiteFrame, StickResult
@@ -16,7 +19,9 @@ from vesivek.output.excel import write_excel
 from vesivek.output.geojson_out import write_geojson
 from vesivek.output.png import write_png
 from vesivek.wfs.chain import fetch_site
+from vesivek.wfs.ortho import fetch_ortho_png
 from vesivek.wfs.stub import StubWfsFetcher
+from vesivek.valokuva import dual_source_verdict, tyovaihe
 
 
 @dataclass
@@ -31,6 +36,8 @@ class RunRequest:
     pinnat: Path | None = None
     output_dir: Path | None = None
     skip_geocode: bool = False
+    mittaviivat: bool = True
+    ortho: bool = True
 
 
 def resolve_site(req: RunRequest) -> tuple[SiteFrame, GeocodeHit | None]:
@@ -41,7 +48,6 @@ def resolve_site(req: RunRequest) -> tuple[SiteFrame, GeocodeHit | None]:
         return site, None
 
     if req.geojson is not None:
-        # Local file does not need a live geocode, but we still try for metadata.
         hit = None
         try:
             hit = geocode_address(req.osoite)
@@ -85,6 +91,7 @@ def run_measurement(req: RunRequest) -> MeasurementResult:
 
     photo_infos = [classify_photo(p) for p in photos]
     fractions, photo_conf = merge_fractions(photo_infos)
+    occ, occ_note = photos_have_occlusion(photo_infos)
 
     stick = detect_stick(photos, req.mittatikku_m) if photos else StickResult(
         found=False,
@@ -107,7 +114,7 @@ def run_measurement(req: RunRequest) -> MeasurementResult:
 
     override = load_surface_override(req.pinnat)
 
-    records, strip_notes = measure_strip(
+    records, strip_notes, strip = measure_strip(
         site=site,
         facade=facade,
         fractions=fractions,
@@ -118,9 +125,60 @@ def run_measurement(req: RunRequest) -> MeasurementResult:
         override=override,
         photo_count=len(photos),
         photos_for_trees=photo_infos,
+        occlusion=occ,
+        occlusion_note=occ_note,
     )
     warnings.extend(strip_notes)
 
+    if strip.width_source == "tontti":
+        width = strip.width_m
+        width_src = "tontti"
+
+    ticks = []
+    if req.mittaviivat and strip.geometry is not None:
+        ticks = build_mittaviivat(
+            facade,
+            strip.geometry,
+            spacing_m=1.0,
+            work_edges=strip.work_edges,
+        )
+
+    ortho_bytes = ortho_bbox = None
+    if req.ortho:
+        try:
+            from shapely.geometry import shape as shp_shape
+
+            geoms = [shp_shape(site.building["geometry"])]
+            if site.plot and site.plot.get("geometry"):
+                geoms.append(shp_shape(site.plot["geometry"]))
+            if strip.geometry:
+                geoms.append(shp_shape(strip.geometry))
+            minx = min(g.bounds[0] for g in geoms)
+            miny = min(g.bounds[1] for g in geoms)
+            maxx = max(g.bounds[2] for g in geoms)
+            maxy = max(g.bounds[3] for g in geoms)
+            # Crop PNG to building + strip, not the whole plot.
+            focus = shp_shape(site.building["geometry"])
+            if strip.geometry:
+                focus = focus.union(shp_shape(strip.geometry))
+            minx, miny, maxx, maxy = box(*focus.bounds).buffer(12).bounds
+            ortho_bytes, ortho_bbox, ortho_label = fetch_ortho_png(minx, miny, maxx, maxy)
+            if ortho_label:
+                site.ortho_source = ortho_label
+                warnings.append(f"Orto: {ortho_label.split(' (')[0]}")
+            else:
+                warnings.append("Ortoilmakuvaa ei saatu (WMS). PNG piirtää vektorit ilman taustaa.")
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"Ortoilmakuva ohitettiin: {exc}")
+
+    dual = dual_source_verdict(strip.area_m2_plot, strip.area_m2_buffer)
+    stage = tyovaihe(
+        has_wfs=bool(site.building),
+        has_photos_or_ortho=bool(photo_infos) or bool(req.ortho),
+        has_ticks=bool(ticks),
+        dual=dual,
+        one_facade=True,
+    )
     out_dir = _prepare_output_dir(req)
     result = MeasurementResult(
         site=site,
@@ -128,10 +186,19 @@ def run_measurement(req: RunRequest) -> MeasurementResult:
         surfaces=records,
         photos=photo_infos,
         stick=stick,
-        strip_width_m=width,
-        strip_width_source=width_src,
+        strip_width_m=width if width else strip.width_m,
+        strip_width_source=width_src if width_src != "puuttuu" else strip.width_source,
         warnings=_unique(warnings),
         output_dir=out_dir,
+        strip=strip,
+        qc_ticks=ticks,
+        occlusion=occ or bool((override or {}).get("peite")),
+        occlusion_note=occ_note or str((override or {}).get("peite") or ""),
+        ortho_bytes=ortho_bytes,
+        ortho_bbox=ortho_bbox,
+        mittaviivat=req.mittaviivat,
+        tyovaihe=stage,
+        dual_note=dual.note,
     )
     result.png_path = write_png(result, out_dir / "julkisivukaista.png")
     result.geojson_path = write_geojson(result, out_dir / "julkisivukaista.geojson")

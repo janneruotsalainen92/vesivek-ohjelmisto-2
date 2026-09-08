@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vesivek-ohjelma"
-version = "0.1.0"
-description = "Vesivek Ohjelma MVP v1 — WFS-lukittu julkisivukaista, pinta-alat PNG + Excel"
+version = "0.2.1"
+description = "Vesivek Ohjelma bot-kokeilu — WFS-lukittu julkisivukaista (seinä→reuna), pinta-alat PNG + Excel"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "Vesivek Ohjelma" }]
